@@ -184,6 +184,11 @@ async def authenticate(audio: UploadFile = File(...)):
     print("STEP 2 - File Saved", flush=True)
     waveform, sr = vad_processor.load_audio(temp_path)
     print("STEP 3 - Audio Loaded", flush=True)
+    speech_waveform = vad_processor.remove_silence(waveform, sr)
+    print("STEP 4 - Silence Removed", flush=True)
+    duration_seconds = len(speech_waveform) / sr
+    print(f"Speech Duration: {duration_seconds:.2f} seconds", flush=True)
     return {
-        "status": "audio_loaded"
+        "status": "silence_removed",
+        "duration": duration_seconds
     }
