@@ -1,0 +1,10 @@
+speaker_env/
+__pycache__/
+*.pyc
+.git
+.gitignore
+.vscode/
+.idea/
+temp/
+temp_recording.wav
+embedding.npy

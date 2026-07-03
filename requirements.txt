@@ -1,6 +1,7 @@
 torch==2.1.2
 torchaudio==2.1.2
 speechbrain==0.5.13
+huggingface_hub==0.16.4
 librosa==0.10.1
 soundfile==0.12.1
 numpy==1.26.4

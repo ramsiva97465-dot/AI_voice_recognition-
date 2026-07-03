@@ -32,9 +32,10 @@ app.add_middleware(
 
 
 # Ensure required directories exist
-TEMP_DIR = Path("temp")
-TEMP_DIR.mkdir(exist_ok=True)
-SPEAKER_DB_DIR = Path("database") / "speakers"
+BASE_DIR = Path(__file__).resolve().parent.parent
+TEMP_DIR = BASE_DIR / "temp"
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+SPEAKER_DB_DIR = BASE_DIR / "database" / "speakers"
 SPEAKER_DB_DIR.mkdir(parents=True, exist_ok=True)
 
 @app.get("/", response_class=JSONResponse)
