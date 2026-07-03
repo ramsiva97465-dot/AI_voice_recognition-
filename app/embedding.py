@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import librosa
 import soundfile as sf
+import torchaudio.functional as F_audio
 
 # ---------------------------------------------------------------
 # Lazy import of the SpeechBrain EncoderClassifier.
@@ -52,20 +53,47 @@ def _load_model() -> EncoderClassifier:
     return _model
 
 
-def _load_waveform(wav_path: pathlib.Path) -> tuple[torch.Tensor, int]:
-    """Load a WAV file, convert to mono, and return a (1, N) torch Tensor together with its original sample rate."""
-    try:
-        audio_np, sr = sf.read(str(wav_path))  # (samples,) or (samples, channels)
-    except Exception as exc:
-        raise RuntimeError(f"Error loading audio file '{wav_path}': {exc}") from exc
-
+def generate_embedding_from_waveform(audio_np: np.ndarray, sr: int) -> np.ndarray:
+    """Generate an embedding directly from a waveform array."""
     # Stereo → mono by averaging all channels
     if audio_np.ndim > 1:
         audio_np = np.mean(audio_np, axis=1)
 
     # (1, num_samples) tensor, made contiguous for safety
     waveform = torch.from_numpy(audio_np).float().unsqueeze(0).contiguous()
-    return waveform, sr
+
+    target_sr = 16000
+    if sr != target_sr:
+        # torchaudio works directly on tensors
+        waveform = F_audio.resample(waveform, orig_freq=sr, new_freq=target_sr)
+        sr = target_sr
+        
+        # Trim leading and trailing silence
+        audio_np = waveform.squeeze(0).numpy()
+        audio_np, _ = librosa.effects.trim(audio_np, top_db=25)
+        
+        # Normalize waveform volume
+        peak = np.max(np.abs(audio_np))
+        if peak > 0:
+            audio_np = audio_np / peak
+            
+        # Convert back to a contiguous torch tensor
+        waveform = torch.from_numpy(audio_np).float().unsqueeze(0).contiguous()
+
+    # -----------------------------------------------------------------
+    # Model inference (model is cached after the first call).
+    # -----------------------------------------------------------------
+    model = _load_model()
+    try:
+        with torch.no_grad():
+            # Returns (1, dim) or (1, 1, dim)
+            embedding = model.encode_batch(waveform)
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError(f"Failed to generate embedding: {exc}") from exc
+
+    # Convert to a plain 1‑D NumPy vector
+    embedding_np = embedding.squeeze().cpu().numpy()
+    return embedding_np
 
 
 def generate_embedding(audio_path: str) -> np.ndarray:
@@ -87,42 +115,18 @@ def generate_embedding(audio_path: str) -> np.ndarray:
         If any step (loading, resampling, model inference) fails.
     """
     wav_path = pathlib.Path(audio_path)
-
-    # -----------------------------------------------------------------
-    # Load and optionally resample.
-    # -----------------------------------------------------------------
-    waveform, sr = _load_waveform(wav_path)
-
-    target_sr = 16000
-    if sr != target_sr:
-        # librosa works on NumPy arrays
-        audio_np = waveform.squeeze(0).numpy()
-        audio_np = librosa.resample(audio_np, orig_sr=sr, target_sr=target_sr)
-        waveform = torch.from_numpy(audio_np).float().unsqueeze(0)
-        sr = target_sr
-        # Trim leading and trailing silence
-        audio_np, _ = librosa.effects.trim(audio_np, top_db=25)
-        # Normalize waveform volume
-        peak = np.max(np.abs(audio_np))
-        if peak > 0:
-            audio_np = audio_np / peak
-        # Convert back to a contiguous torch tensor
-        waveform = torch.from_numpy(audio_np).float().unsqueeze(0).contiguous()
-
-    # -----------------------------------------------------------------
-    # Model inference (model is cached after the first call).
-    # -----------------------------------------------------------------
-    model = _load_model()
     try:
-        with torch.no_grad():
-            # Returns (1, dim) or (1, 1, dim)
-            embedding = model.encode_batch(waveform)
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError(f"Failed to generate embedding: {exc}") from exc
+        audio_np, sr = sf.read(str(wav_path))
+    except Exception as exc:
+        raise RuntimeError(f"Error loading audio file '{wav_path}': {exc}") from exc
 
-    # Convert to a plain 1‑D NumPy vector
-    embedding_np = embedding.squeeze().cpu().numpy()
-    return embedding_np
+    return generate_embedding_from_waveform(audio_np, sr)
 
-# Pre-load the model at import time so the first request doesn't timeout
-_load_model()
+# Pre-load and warm up the model at import time so the first request doesn't timeout
+_warmup_model = _load_model()
+try:
+    with torch.no_grad():
+        # Perform a dummy inference with 1 second of silence at 16 kHz
+        _warmup_model.encode_batch(torch.zeros((1, 16000), dtype=torch.float32))
+except Exception:
+    pass

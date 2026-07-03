@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 import numpy as np
 
-from app.embedding import generate_embedding
+from app.embedding import generate_embedding, generate_embedding_from_waveform
 from constants import DEFAULT_THRESHOLD
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +37,21 @@ TEMP_DIR = BASE_DIR / "temp"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 SPEAKER_DB_DIR = BASE_DIR / "database" / "speakers"
 SPEAKER_DB_DIR.mkdir(parents=True, exist_ok=True)
+
+speaker_embeddings_cache: dict[str, np.ndarray] = {}
+
+def reload_cache():
+    """Helper to reload all speaker embeddings into the in-memory cache."""
+    global speaker_embeddings_cache
+    new_cache = {}
+    for npy_path in SPEAKER_DB_DIR.glob("*.npy"):
+        new_cache[npy_path.stem] = np.load(npy_path)
+    speaker_embeddings_cache.clear()
+    speaker_embeddings_cache.update(new_cache)
+
+@app.on_event("startup")
+async def startup_event():
+    reload_cache()
 
 @app.get("/", response_class=JSONResponse)
 async def root() -> dict:
@@ -66,6 +81,8 @@ async def enroll(
         # Save embedding to database
         save_path = SPEAKER_DB_DIR / f"{name}.npy"
         np.save(save_path, embedding)
+        # Update in-memory cache
+        speaker_embeddings_cache[name] = embedding
         # Cleanup temporary file
         temp_path.unlink(missing_ok=True)
         return {
@@ -130,17 +147,12 @@ async def identify(
             shutil.copyfileobj(audio.file, buffer)
         # Generate embedding from uploaded audio
         embedding = generate_embedding(str(temp_path))
-        # Load all speaker embeddings
-        speaker_embeddings: dict[str, np.ndarray] = {}
-        for npy_path in SPEAKER_DB_DIR.glob("*.npy"):
-            speaker_name = npy_path.stem
-            speaker_embeddings[speaker_name] = np.load(npy_path)
-        if not speaker_embeddings:
+        if not speaker_embeddings_cache:
             raise HTTPException(status_code=404, detail="No enrolled speakers found")
         # Compute similarities
         best_name = "Unknown"
         best_sim = 0.0
-        for name, emb in speaker_embeddings.items():
+        for name, emb in speaker_embeddings_cache.items():
             norm_a = np.linalg.norm(embedding)
             norm_b = np.linalg.norm(emb)
             sim = float(np.dot(embedding, emb) / (norm_a * norm_b)) if norm_a and norm_b else 0.0
@@ -185,22 +197,16 @@ async def authenticate(
             }
             
         # 2. Generate Embedding
-        # generate_embedding takes a path, so we use the original temp_path which contains the full audio. 
-        # (The VAD check was just to ensure length is sufficient).
-        embedding = generate_embedding(str(temp_path))
+        # We reuse the processed speech waveform to avoid decoding the file twice
+        embedding = generate_embedding_from_waveform(speech_waveform, sr)
         
-        # 3. Load every enrolled speaker embedding
-        speaker_embeddings: dict[str, np.ndarray] = {}
-        for npy_path in SPEAKER_DB_DIR.glob("*.npy"):
-            speaker_name = npy_path.stem
-            speaker_embeddings[speaker_name] = np.load(npy_path)
-            
+        # 3. Use in-memory cache
         # 4. Cosine Similarity Search
         best_name = None
         best_sim = 0.0
         
-        if speaker_embeddings:
-            for name, emb in speaker_embeddings.items():
+        if speaker_embeddings_cache:
+            for name, emb in speaker_embeddings_cache.items():
                 norm_a = np.linalg.norm(embedding)
                 norm_b = np.linalg.norm(emb)
                 sim = float(np.dot(embedding, emb) / (norm_a * norm_b)) if norm_a and norm_b else 0.0
@@ -226,6 +232,7 @@ async def authenticate(
             new_id = customer_manager.generate_customer_id()
             save_path = SPEAKER_DB_DIR / f"{new_id}.npy"
             np.save(save_path, embedding)
+            speaker_embeddings_cache[new_id] = embedding
             
             customer = customer_manager.create_customer(new_id)
             return {
