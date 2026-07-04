@@ -55,45 +55,58 @@ def _load_model() -> EncoderClassifier:
 
 def generate_embedding_from_waveform(audio_np: np.ndarray, sr: int) -> np.ndarray:
     """Generate an embedding directly from a waveform array."""
-    # Stereo → mono by averaging all channels
-    if audio_np.ndim > 1:
-        audio_np = np.mean(audio_np, axis=1)
+    try:
+        # Stereo → mono by averaging all channels
+        if audio_np.ndim > 1:
+            audio_np = np.mean(audio_np, axis=1)
 
-    # (1, num_samples) tensor, made contiguous for safety
-    waveform = torch.from_numpy(audio_np).float().unsqueeze(0).contiguous()
-
-    target_sr = 16000
-    if sr != target_sr:
-        # torchaudio works directly on tensors
-        waveform = F_audio.resample(waveform, orig_freq=sr, new_freq=target_sr)
-        sr = target_sr
-        
-        # Trim leading and trailing silence
-        audio_np = waveform.squeeze(0).numpy()
-        audio_np, _ = librosa.effects.trim(audio_np, top_db=25)
-        
-        # Normalize waveform volume
-        peak = np.max(np.abs(audio_np))
-        if peak > 0:
-            audio_np = audio_np / peak
-            
-        # Convert back to a contiguous torch tensor
+        # (1, num_samples) tensor, made contiguous for safety
         waveform = torch.from_numpy(audio_np).float().unsqueeze(0).contiguous()
 
-    # -----------------------------------------------------------------
-    # Model inference (model is cached after the first call).
-    # -----------------------------------------------------------------
-    model = _load_model()
-    try:
-        with torch.no_grad():
-            # Returns (1, dim) or (1, 1, dim)
-            embedding = model.encode_batch(waveform)
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError(f"Failed to generate embedding: {exc}") from exc
+        target_sr = 16000
+        if sr != target_sr:
+            # torchaudio works directly on tensors
+            waveform = F_audio.resample(waveform, orig_freq=sr, new_freq=target_sr)
+            sr = target_sr
+            
+            # Trim leading and trailing silence
+            audio_np = waveform.squeeze(0).numpy()
+            audio_np, _ = librosa.effects.trim(audio_np, top_db=25)
+            
+            # Normalize waveform volume
+            peak = np.max(np.abs(audio_np))
+            if peak > 0:
+                audio_np = audio_np / peak
+                
+            # Convert back to a contiguous torch tensor
+            waveform = torch.from_numpy(audio_np).float().unsqueeze(0).contiguous()
 
-    # Convert to a plain 1‑D NumPy vector
-    embedding_np = embedding.squeeze().cpu().numpy()
-    return embedding_np
+        print("Embedding Input Shape:", waveform.shape, flush=True)
+        print("Embedding Sample Rate:", sr, flush=True)
+
+        # -----------------------------------------------------------------
+        # Model inference (model is cached after the first call).
+        # -----------------------------------------------------------------
+        model = _load_model()
+        try:
+            with torch.no_grad():
+                # Returns (1, dim) or (1, 1, dim)
+                print("Calling encode_batch()", flush=True)
+                embedding = model.encode_batch(waveform)
+                print("encode_batch() completed", flush=True)
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to generate embedding: {exc}") from exc
+
+        # Convert to a plain 1‑D NumPy vector
+        embedding_np = embedding.squeeze().cpu().numpy()
+        return embedding_np
+    except Exception as e:
+        print("=" * 80, flush=True)
+        print("EMBEDDING FAILED", flush=True)
+        import traceback
+        traceback.print_exc()
+        print("=" * 80, flush=True)
+        raise
 
 
 def generate_embedding(audio_path: str) -> np.ndarray:
