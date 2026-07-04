@@ -188,7 +188,20 @@ async def authenticate(audio: UploadFile = File(...)):
     print("STEP 4 - Silence Removed", flush=True)
     duration_seconds = len(speech_waveform) / sr
     print(f"Speech Duration: {duration_seconds:.2f} seconds", flush=True)
+
+    print("STEP 5 - Starting embedding generation", flush=True)
+    try:
+        embedding = generate_embedding_from_waveform(speech_waveform, sr)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Embedding Error: {e}", flush=True)
+        raise
+
+    print("STEP 6 - Embedding generated", flush=True)
+    print(f"Embedding shape: {embedding.shape}", flush=True)
+
     return {
-        "status": "silence_removed",
-        "duration": duration_seconds
+        "status": "embedding_generated",
+        "dimension": int(embedding.shape[0])
     }
