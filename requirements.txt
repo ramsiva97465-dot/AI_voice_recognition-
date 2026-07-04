@@ -1,11 +1,35 @@
-﻿fastapi==0.109.2
+﻿# =========================
+# Web Framework
+# =========================
+fastapi==0.109.2
 uvicorn==0.27.0
 python-multipart==0.0.7
 
+# =========================
+# Machine Learning
+# =========================
 torch==2.1.2
 torchaudio==2.1.2
+
+# =========================
+# SpeechBrain
+# =========================
 speechbrain==0.5.13
 
+# =========================
+# Hugging Face (Compatible with SpeechBrain 0.5.13)
+# =========================
+huggingface_hub==0.19.4
+
+# =========================
+# Audio Processing
+# =========================
 librosa==0.10.1
 soundfile==0.12.1
 numpy==1.26.4
+
+# =========================
+# Utilities
+# =========================
+scipy==1.11.4
+requests==2.31.0
