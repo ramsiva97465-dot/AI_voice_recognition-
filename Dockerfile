@@ -24,10 +24,11 @@ COPY requirements.txt .
 RUN pip install --upgrade pip
 
 # Step 1: Install CPU-only PyTorch first (pinned versions = faster pip resolve)
+# Correct syntax: specify --index-url AFTER package names
 RUN pip install --no-cache-dir \
-    torch==2.2.2+cpu \
-    torchaudio==2.2.2+cpu \
-    --index-url https://download.pytorch.org/whl/cpu
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.2.2 \
+    torchaudio==2.2.2
 
 # Step 2: Install remaining packages (torch already satisfied, won't re-download)
 RUN pip install --no-cache-dir -r requirements.txt
@@ -38,3 +39,4 @@ COPY . .
 # ----- Runtime -----
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
