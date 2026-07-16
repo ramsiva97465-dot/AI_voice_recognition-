@@ -1,3 +1,19 @@
+# =========================================================
+# SERVER REQUIREMENTS FOR VOICE AUTHENTICATION API
+# =========================================================
+# Choose your Railway plan based on your latency needs:
+#
+# | Plan              | vCPU | Latency per request | Best for              |
+# |-------------------|------|---------------------|-----------------------|
+# | Standard (Min)    | 4    | ~200-350 ms         | Testing / Low traffic |
+# | Pro (Recommended) | 8-16 | ~100-150 ms         | Production live calls |
+# | Enterprise        | 24+  | ~80-120 ms          | High concurrency      |
+# | GPU (T4/A10G)     | Any  | ~20-50 ms           | Ultra-low latency     |
+#
+# NOTE: Railway does NOT auto-allocate CPU/GPU from this file.
+#       The manager must manually select the plan in Railway dashboard.
+# =========================================================
+
 # =========================
 # Web Framework
 # =========================
