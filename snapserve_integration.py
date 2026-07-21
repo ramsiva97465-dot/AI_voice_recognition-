@@ -37,7 +37,10 @@ import time
 # =========================================================
 import os
 
-VOICE_AUTH_API_URL = os.getenv("VOICE_AUTH_URL", "https://ai-voice-recognition-b0rs.onrender.com") + "/authenticate/pcm"
+VOICE_AUTH_BASE = os.getenv("VOICE_AUTH_URL")
+if not VOICE_AUTH_BASE:
+    raise RuntimeError("Set VOICE_AUTH_URL environment variable in Railway (e.g., https://your-app.railway.app)")
+VOICE_AUTH_API_URL = VOICE_AUTH_BASE + "/authenticate/pcm"
 BUFFER_SECONDS = int(os.getenv("VOICE_AUTH_BUFFER_SECONDS", "3"))
 
 
