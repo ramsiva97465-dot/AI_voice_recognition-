@@ -298,15 +298,15 @@ async def authenticate(
         speech_waveform = vad_processor.remove_silence(waveform, sr)
         
         duration_seconds = len(speech_waveform) / sr
-        if duration_seconds < 15.0:
+        if duration_seconds < 1.5:
             processing_time_ms = (time.perf_counter() - total_start) * 1000.0
             return {
                 "status": "error",
                 "authentication_result": "INSUFFICIENT_AUDIO",
-                "required_duration_seconds": 15.0,
+                "required_duration_seconds": 1.5,
                 "received_duration_seconds": round(duration_seconds, 2),
                 "processing_time_ms": round(processing_time_ms, 2),
-                "message": "Need at least 15 seconds of clear speech."
+                "message": "Need at least 1.5 seconds of clear speech."
             }
 
         # 3. Generate the embedding
@@ -463,16 +463,16 @@ async def authenticate_pcm(
         speech_waveform = vad_processor.remove_silence(waveform, sr)
 
         duration_seconds = len(speech_waveform) / sr
-        if duration_seconds < 15.0:
+        if duration_seconds < 1.5:
             processing_time_ms = (time.perf_counter() - total_start) * 1000.0
             return {
                 "status": "error",
                 "authentication_result": "INSUFFICIENT_AUDIO",
-                "required_duration_seconds": 15.0,
+                "required_duration_seconds": 1.5,
                 "received_duration_seconds": round(duration_seconds, 2),
                 "processing_time_ms": round(processing_time_ms, 2),
                 "audio_format": "PCM_8KHZ",
-                "message": "Need at least 15 seconds of clear speech."
+                "message": "Need at least 1.5 seconds of clear speech."
             }
 
         # 5. Generate embedding
