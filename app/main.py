@@ -173,7 +173,70 @@ async def enroll(
         temp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
-# Verification endpoint
+
+@app.post("/enroll/pcm", response_class=JSONResponse)
+async def enroll_pcm(
+    customer_name: str,
+    audio_data: bytes = File(...),
+    db: Session = Depends(get_db)
+) -> dict:
+    """Enroll raw PCM audio under an existing customer by name.
+    
+    Used to add additional voice embeddings (e.g., mobile phone audio) to an
+    already-enrolled customer so they can be recognized from multiple call types.
+    """
+    total_start = time.perf_counter()
+    try:
+        # Convert raw 8kHz 16-bit PCM bytes to numpy waveform
+        waveform, sr = pcm_bytes_to_numpy(audio_data, sample_rate=8000)
+        duration_seconds = len(waveform) / sr
+
+        if duration_seconds < 1.0:
+            raise HTTPException(status_code=400, detail="Audio too short for enrollment (< 1 second)")
+
+        # Run VAD to extract only active speech
+        import vad_processor
+        speech_waveform = vad_processor.filter_speech(waveform, sr)
+        if speech_waveform is None or len(speech_waveform) < sr * 0.5:
+            speech_waveform = waveform  # fall back to raw if VAD strips too much
+
+        # Generate embedding
+        embedding = generate_embedding_from_waveform(speech_waveform, sr)
+
+        # Look up existing customer — do NOT create new
+        customer = crud.get_customer_by_name(db, customer_name)
+        if not customer:
+            raise HTTPException(status_code=404, detail=f"Customer '{customer_name}' not found. Enroll them first via /enroll.")
+
+        # Save new embedding under the existing customer
+        crud.save_embedding(
+            db=db,
+            customer_id=customer.customer_id,
+            embedding=embedding,
+            sample_rate=sr,
+            audio_duration=duration_seconds
+        )
+
+        processing_time_ms = (time.perf_counter() - total_start) * 1000.0
+        print(f"[Enroll PCM] Added embedding for existing customer '{customer_name}' — duration: {duration_seconds:.2f}s", flush=True)
+
+        return {
+            "status": "success",
+            "customer_id": str(customer.customer_id),
+            "customer_name": customer.customer_name,
+            "embedding_saved": True,
+            "audio_duration": round(duration_seconds, 2),
+            "processing_time_ms": round(processing_time_ms, 2),
+            "message": f"Additional voice embedding enrolled for '{customer_name}' successfully."
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/verify", response_class=JSONResponse)
 async def verify(
     name: str = Form(...),
@@ -501,6 +564,22 @@ async def authenticate_pcm(
             )
             matched_customer = crud.get_customer_by_id(db, best_customer_id)
             matched_embedding_count = len(matched_customer.voice_embeddings) if matched_customer else 0
+
+            # Auto-learning: save this audio as an additional embedding so the model
+            # improves over time and learns the caller's mobile/codec voice variations.
+            # Only save if we have fewer than 10 embeddings (avoid unbounded growth).
+            if matched_embedding_count < 10:
+                try:
+                    crud.save_embedding(
+                        db=db,
+                        customer_id=best_customer_id,
+                        embedding=embedding,
+                        sample_rate=sr,
+                        audio_duration=duration_seconds
+                    )
+                    print(f"[Voice Auth] Auto-learned new embedding for '{best_name}' (now {matched_embedding_count + 1} embeddings)", flush=True)
+                except Exception as learn_err:
+                    print(f"[Voice Auth] Auto-learn save failed (non-fatal): {learn_err}", flush=True)
 
             return {
                 "status": "success",
