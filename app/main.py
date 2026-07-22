@@ -496,12 +496,12 @@ async def authenticate_pcm(
                 best_sim = sim
                 best_customer_id = row.customer_id
                 best_name = row.customer_name
-
         threshold = DEFAULT_THRESHOLD
         authenticated = best_customer_id is not None and best_sim >= threshold
-
         processing_time_ms = (time.perf_counter() - total_start) * 1000.0
         current_timestamp = datetime.utcnow().isoformat()
+
+        print(f"[Voice Auth] Best match: {best_name} ({best_customer_id}) with similarity {best_sim:.4f} (Threshold: {threshold})")
 
         if authenticated:
             # Save authentication log
